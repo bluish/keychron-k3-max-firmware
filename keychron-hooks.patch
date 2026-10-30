@@ -1,0 +1,111 @@
+diff --git c/keyboards/keychron/common/keychron_raw_hid.c w/keyboards/keychron/common/keychron_raw_hid.c
+index b3657af..d0ec23c 100644
+--- c/keyboards/keychron/common/keychron_raw_hid.c
++++ w/keyboards/keychron/common/keychron_raw_hid.c
+@@ -128,6 +128,10 @@ void kc_raw_hid_send(uint8_t src, uint8_t *data, uint8_t len) {
+ #    endif
+ }
+ 
++__attribute__((weak)) bool kc_raw_hid_rx_user(uint8_t src, uint8_t *data, uint8_t length) {
++    return false;
++}
++
+ bool kc_raw_hid_rx(uint8_t src, uint8_t *data, uint8_t length) {
+ #    if defined(ANANLOG_MATRIX) && defined(VIA_ENABLE)
+     if (src == RAW_HID_SRC_USB && data[0] == id_get_keyboard_value && data[1] == id_switch_matrix_state) {
+@@ -264,6 +268,9 @@ bool kc_raw_hid_rx(uint8_t src, uint8_t *data, uint8_t length) {
+ 
+ #    endif
+         default:
++            // Keymap-level commands (remote host switch, battery); the
++            // handler fills `data` with the reply when it returns true.
++            if (kc_raw_hid_rx_user(src, data, length)) break;
+             return false;
+     }
+ 
+diff --git c/keyboards/keychron/common/keychron_task.c w/keyboards/keychron/common/keychron_task.c
+index 183a368..a46ff4e 100644
+--- c/keyboards/keychron/common/keychron_task.c
++++ w/keyboards/keychron/common/keychron_task.c
+@@ -115,6 +115,7 @@ __attribute__((weak)) bool rgb_matrix_indicators_keychron(void) {
+ #endif
+ 
+ __attribute__((weak)) void keychron_task_kb(void) {}
++__attribute__((weak)) void keychron_task_user(void) {}
+ 
+ void keychron_task(void) {
+ #if defined(LK_WIRELESS_ENABLE) || defined(KC_BLUETOOTH_ENABLE)
+@@ -131,6 +132,7 @@ void keychron_task(void) {
+     keychron_common_task();
+ 
+     keychron_task_kb();
++    keychron_task_user();
+ }
+ 
+ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
+diff --git c/keyboards/keychron/common/wireless/keychron_wireless_common.c w/keyboards/keychron/common/wireless/keychron_wireless_common.c
+index 32145a7..ec98fcc 100644
+--- c/keyboards/keychron/common/wireless/keychron_wireless_common.c
++++ w/keyboards/keychron/common/wireless/keychron_wireless_common.c
+@@ -252,6 +252,12 @@ void keychron_wireless_common_task(void) {
+ #endif
+ }
+ 
++/* Lets a keymap pick the transport for a mode switch position (the stock
++ * choice is passed in). */
++__attribute__((weak)) transport_t dip_switch_transport_user(transport_t stock) {
++    return stock;
++}
++
+ void wireless_pre_task(void) {
+ #ifdef KEYCOMBO_CONN_SWITCH_ENABLE
+     if (get_transport() == TRANSPORT_NONE) {
+@@ -297,14 +303,14 @@ void wireless_pre_task(void) {
+                     break;
+ #    else
+                 case 0x01:
+-                    set_transport(TRANSPORT_BLUETOOTH);
++                    set_transport(dip_switch_transport_user(TRANSPORT_BLUETOOTH));
+                     break;
+                 case 0x02:
+-                    set_transport(TRANSPORT_P2P4);
++                    set_transport(dip_switch_transport_user(TRANSPORT_P2P4));
+                     break;
+ #    endif
+                 default:
+-                    set_transport(TRANSPORT_USB);
++                    set_transport(dip_switch_transport_user(TRANSPORT_USB));
+                     break;
+             }
+         } else {
+diff --git c/keyboards/keychron/common/wireless/wireless.c w/keyboards/keychron/common/wireless/wireless.c
+index f5483be..d80e6d8 100644
+--- c/keyboards/keychron/common/wireless/wireless.c
++++ w/keyboards/keychron/common/wireless/wireless.c
+@@ -610,7 +610,7 @@ void wireless_event_task(void) {
+ #if defined(RAW_ENABLE) && defined(WILRESS_RAW_ENABLE)
+             case EVT_RAW_HID:
+ #    ifdef VIA_ENABLE
+-                via_raw_hid_receive(RAW_HID_SRC_WIRELESS, event.params.raw_hid_data, 32);
++                raw_hid_receive(RAW_HID_SRC_WIRELESS, event.params.raw_hid_data, 32);
+ #    else
+                 kc_raw_hid_rx(RAW_HID_SRC_WIRELESS, event.params.raw_hid_data, 32);
+ #    endif
+diff --git c/keyboards/keychron/k3_max/k3_max.c w/keyboards/keychron/k3_max/k3_max.c
+index 607ddb0..e7a9161 100644
+--- c/keyboards/keychron/k3_max/k3_max.c
++++ w/keyboards/keychron/k3_max/k3_max.c
+@@ -19,9 +19,13 @@
+ #define POWER_ON_LED_DURATION 3000
+ static uint32_t power_on_indicator_timer;
+ 
++/* Mac/Win switch moved (or power-on reading), after the base layer is set. */
++__attribute__((weak)) void dip_switch_os_user(bool mac) {}
++
+ bool dip_switch_update_kb(uint8_t index, bool active) {
+     if (index == 0) {
+         default_layer_set(1UL << (active ? 0 : 2));
++        dip_switch_os_user(active);
+     }
+     dip_switch_update_user(index, active);
+ 
